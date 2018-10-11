@@ -72,7 +72,7 @@ void task2()
     cudaFree(dev_c);
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
-    std::ofstream out("times.txt");
+    std::ofstream out("times2.txt");
     writeVector(times, out);
     out.close();
 }

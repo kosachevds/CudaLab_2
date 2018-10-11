@@ -1,5 +1,6 @@
 #include "common.cuh"
 #include <iostream>
+#include <ctime>
 
 extern void task1();
 extern void task2();
@@ -7,6 +8,7 @@ extern void task3();
 
 int main()
 {
+    srand(time(nullptr));
     //task1();
     //task2();
     task3();
