@@ -5,7 +5,8 @@
 #include <fstream>
 #include <chrono>
 
-const auto MAX_SQUARE_BLOCK_WIDTH = 32.0; // sqrt(MAX_BLOCK_SIZE);
+const auto BLOCK_GLOBAL = 32u; // sqrt(MAX_BLOCK_SIZE);
+const auto BLOCK_SHARED = 16u;
 
 float multiplyOnCpu(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
 float multiplyGpuGlobal(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
@@ -28,39 +29,38 @@ __global__ void multiplyGlobal(unsigned const* left, unsigned const* right, unsi
             sum += left[row * size + k] * right[k * size + col];
         }
         result[row * size + col] = sum;
-        //result[row * size + col] += left[row * size + col] + right[col * size + col];
     }
 }
 
 
-__global__ void multiplyShared(unsigned const* a, unsigned const* b, unsigned* c, int size)
+__global__ void multiplyShared(unsigned const* left, unsigned const* right, unsigned* result, int size)
 {
-    const auto BLOCK_SIZE = 16;
-    __shared__ unsigned as [BLOCK_SIZE][BLOCK_SIZE];
-    __shared__ unsigned bs [BLOCK_SIZE][BLOCK_SIZE];
-    int bx = blockIdx.x; // индексы блока
-    int by = blockIdx.y;
-    int tx = threadIdx.x; // индексы нити внутри блока
-    int ty = threadIdx.y; //
-    int Row = by * BLOCK_SIZE + ty;
-    int Col = bx * BLOCK_SIZE + tx;
-    unsigned sum = 0;
-    for (int m = 0; m < (size - 1) / BLOCK_SIZE + 1; ++m) {
-        if (Row < size && m * BLOCK_SIZE + tx < size)
-            as[ty][tx] = a[Row * size + m * BLOCK_SIZE + tx];
-        else
+    __shared__ unsigned as [BLOCK_SHARED][BLOCK_SHARED];
+    __shared__ unsigned bs [BLOCK_SHARED][BLOCK_SHARED];
+    int tx = threadIdx.x, ty = threadIdx.y;
+    auto row = blockIdx.y * BLOCK_SHARED + ty;
+    auto col = blockIdx.x * BLOCK_SHARED + tx;
+    auto sum = 0u;
+    for (int m = 0; m < (size - 1) / BLOCK_SHARED + 1; ++m) {
+        if (row < size && m * BLOCK_SHARED + tx < size) {
+            as[ty][tx] = left[row * size + m * BLOCK_SHARED + tx];
+        } else {
             as[ty][tx] = 0;
-        if (Col < size && m * BLOCK_SIZE + ty < size)
-            bs[ty][tx] = b[(m * BLOCK_SIZE + ty) * size + Col];
-        else
+        }
+        if (col < size && m * BLOCK_SHARED + ty < size) {
+            bs[ty][tx] = right[(m * BLOCK_SHARED + ty) * size + col];
+        } else {
             bs[ty][tx] = 0;
+        }
         __syncthreads();
-        for (int k = 0; k < BLOCK_SIZE; ++k)
+        for (int k = 0; k < BLOCK_SHARED; ++k) {
             sum += as[ty][k] * bs[k][tx];
+        }
         __syncthreads();
     }
-    if (Row < size && Col < size)
-        c[Row * size + Col] = sum;
+    if (row < size && col < size) {
+        result[row * size + col] = sum;
+    }
 }
 
 void task3()
@@ -119,37 +119,32 @@ float multiplyOnCpu(unsigned const* const* left, unsigned const* const* right, u
 float multiplyGpuGlobal(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size)
 {
     const auto SIZE = size * size;
-    unsigned *left_gpu, *right_gpu, *result_gpu;
-    cudaMalloc(reinterpret_cast<void**>(&left_gpu), SIZE * sizeof(unsigned));
-    copyMatrixToGpu(left, size, left_gpu);
-    cudaMalloc(reinterpret_cast<void**>(&right_gpu), SIZE * sizeof(unsigned));
-    copyMatrixToGpu(right, size, right_gpu);
-    cudaMalloc(reinterpret_cast<void**>(&result_gpu), SIZE * sizeof(unsigned));
+    unsigned *gpu_left, *gpu_right, *gpu_result;
+    cudaMalloc(&gpu_left, SIZE * sizeof(unsigned));
+    copyMatrixToGpu(left, size, gpu_left);
+    cudaMalloc(&gpu_right, SIZE * sizeof(unsigned));
+    copyMatrixToGpu(right, size, gpu_right);
+    cudaMalloc(&gpu_result, SIZE * sizeof(unsigned));
 
     cudaEvent_t start, end;
     cudaEventCreate(&start);
     cudaEventCreate(&end);
-    unsigned block_count = ceil(size / MAX_SQUARE_BLOCK_WIDTH);
-    unsigned block_size;
-    if (block_count > 1) {
-        block_size = MAX_SQUARE_BLOCK_WIDTH;
-    } else {
-        block_size = size;
-    }
+    unsigned block_size = BLOCK_GLOBAL;
+    unsigned block_count = ceil(size / static_cast<double>(block_size));
     cudaEventRecord(start);
     multiplyGlobal<<<dim3(block_count, block_count), dim3(block_size, block_size)>>>
-        (left_gpu, right_gpu, result_gpu, size);
+        (gpu_left, gpu_right, gpu_result, size);
     cudaEventRecord(end);
     cudaEventSynchronize(end);
     float ms;
     cudaEventElapsedTime(&ms, start, end);
-    copyMatrixFromGpu(result_gpu, size, result);
+    copyMatrixFromGpu(gpu_result, size, result);
 
     cudaEventDestroy(start);
     cudaEventDestroy(end);
-    cudaFree(left_gpu);
-    cudaFree(right_gpu);
-    cudaFree(result_gpu);
+    cudaFree(gpu_left);
+    cudaFree(gpu_right);
+    cudaFree(gpu_result);
     return ms;
 }
 
@@ -157,18 +152,17 @@ float multiplyGpuShared(unsigned const* const* left, unsigned const* const* righ
 {
     const auto SIZE = size * size;
     unsigned *gpu_left, *gpu_right, *gpu_result;
-    cudaMalloc(reinterpret_cast<void**>(&gpu_left), SIZE * sizeof(unsigned));
+    cudaMalloc(&gpu_left, SIZE * sizeof(unsigned));
     copyMatrixToGpu(left, size, gpu_left);
-    cudaMalloc(reinterpret_cast<void**>(&gpu_right), SIZE * sizeof(unsigned));
+    cudaMalloc(&gpu_right, SIZE * sizeof(unsigned));
     copyMatrixToGpu(right, size, gpu_right);
-    //cudaMalloc(&gpu_result, SIZE * sizeof(&gpu_result));
-    cudaMalloc(reinterpret_cast<void**>(&gpu_result), SIZE * sizeof(unsigned));
+    cudaMalloc(&gpu_result, SIZE * sizeof(unsigned));
 
     cudaEvent_t start, end;
     cudaEventCreate(&start);
     cudaEventCreate(&end);
-    unsigned block_size = 16;
-    unsigned block_count = (size) / block_size + 1;
+    unsigned block_size = BLOCK_SHARED;
+    unsigned block_count = ceil(size / static_cast<double>(block_size));
     cudaEventRecord(start);
     multiplyShared<<<dim3(block_count, block_count), dim3(block_size, block_size)>>>
         (gpu_left, gpu_right, gpu_result, size);
