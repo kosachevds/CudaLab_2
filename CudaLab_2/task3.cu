@@ -32,38 +32,42 @@ __global__ void multiplyGlobal(unsigned const* left, unsigned const* right, unsi
     }
 }
 
+
 __global__ void multiplyShared(unsigned const* a, unsigned const* b, unsigned* c, int size)
 {
     const auto BLOCK_SIZE = 16;
+    __shared__ unsigned as [BLOCK_SIZE][BLOCK_SIZE];
+    __shared__ unsigned bs [BLOCK_SIZE][BLOCK_SIZE];
     int bx = blockIdx.x; // индексы блока
-    int by = blockIdx.y; //
+    int by = blockIdx.y;
     int tx = threadIdx.x; // индексы нити внутри блока
     int ty = threadIdx.y; //
-    int aBegin = size * BLOCK_SIZE * by;
-    int aEnd = aBegin + size - 1;
-    int aStep = BLOCK_SIZE;
-    int bBegin = bx * BLOCK_SIZE;
-    int bStep = BLOCK_SIZE * size;
-    float sum = 0.0f;
-    for (int ia = aBegin, ib = bBegin; ia <= aEnd; ia += aStep, ib += bStep) {
-        __shared__ unsigned as [BLOCK_SIZE][BLOCK_SIZE];
-        __shared__ unsigned bs [BLOCK_SIZE][BLOCK_SIZE];
-        as[ty][tx] = a[ia + size * ty + tx];
-        bs[ty][tx] = b[ib + size * ty + tx];
-        __syncthreads(); // Убедимся, что подматрицы полностью загружены
-        for (int k = 0; k < BLOCK_SIZE; k++)
+    int Row = by * BLOCK_SIZE + ty;
+    int Col = bx * BLOCK_SIZE + tx;
+    unsigned sum = 0;
+    for (int m = 0; m < (size - 1) / BLOCK_SIZE + 1; ++m) {
+        if (Row < size && m * BLOCK_SIZE + tx < size)
+            as[ty][tx] = a[Row * size + m * BLOCK_SIZE + tx];
+        else
+            as[ty][tx] = 0;
+        if (Col < size && m * BLOCK_SIZE + ty < size)
+            bs[ty][tx] = b[(m * BLOCK_SIZE + ty) * size + Col];
+        else
+            bs[ty][tx] = 0;
+        __syncthreads();
+        for (int k = 0; k < BLOCK_SIZE; ++k)
             sum += as[ty][k] * bs[k][tx];
-        __syncthreads(); // Убедимся, что подматрицы никому больше не нужны
+        __syncthreads();
     }
-    c[size * BLOCK_SIZE * by + BLOCK_SIZE * bx + size * ty + tx] = sum;
+    if (Row < size && Col < size)
+        c[Row * size + Col] = sum;
 }
-
 
 void task3()
 {
     const auto MIN_SIZE = 8;
     const auto STEP = MIN_SIZE;
-    const auto MAX_SIZE =  32 * MIN_SIZE;
+    const auto MAX_SIZE = 32 * MIN_SIZE;
     std::vector<float> times_cpu, times_gpu_g, times_gpu_s;
     for (auto size = MIN_SIZE; size <= MAX_SIZE ; size += STEP) {
         system("cls");
@@ -79,7 +83,7 @@ void task3()
              ms = -1;
         }
         times_gpu_g.push_back(ms);
-        ms = multiplyGpuShared(left, right, result_cpu, size);
+        ms = multiplyGpuShared(left, right, result_gpu, size);
         if (!equalsMatrices(result_cpu, result_gpu, size)) {
              ms = -1;
         }
@@ -109,7 +113,7 @@ float multiplyOnCpu(unsigned const* const* left, unsigned const* const* right, u
         }
     }
     auto stop = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration_cast<std::chrono::milliseconds>(stop - start).count();
+    return std::chrono::duration_cast<std::chrono::microseconds>(stop - start).count() / 1000.0F;
 }
 
 float multiplyGpuGlobal(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size)
@@ -163,13 +167,8 @@ float multiplyGpuShared(unsigned const* const* left, unsigned const* const* righ
     cudaEvent_t start, end;
     cudaEventCreate(&start);
     cudaEventCreate(&end);
-    unsigned block_count = ceil(size / MAX_SQUARE_BLOCK_WIDTH);
-    unsigned block_size;
-    if (block_count > 1) {
-        block_size = MAX_SQUARE_BLOCK_WIDTH;
-    } else {
-        block_size = size;
-    }
+    unsigned block_size = 16;
+    unsigned block_count = (size) / block_size + 1;
     cudaEventRecord(start);
     multiplyShared<<<dim3(block_count, block_count), dim3(block_size, block_size)>>>
         (gpu_left, gpu_right, gpu_result, size);
