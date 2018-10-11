@@ -2,7 +2,7 @@
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <fstream>
-#include <ctime>
+#include <iostream>
 
 __global__ void task2Kernel(unsigned const* a, unsigned const* b, unsigned* result, size_t size)
 {
@@ -17,19 +17,20 @@ void task2()
 {
     const auto SIZE = 8 * 1024 * 1024;
     const auto STREAM_COUNT = 8;
-    srand(time(nullptr));
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
     // TODO: matrix[3][SIZE];
     std::vector<unsigned> host_a(SIZE), host_b(SIZE), host_c(SIZE);
     unsigned *dev_a, *dev_b, *dev_c;
-    cudaMalloc(reinterpret_cast<void**>(&dev_a), SIZE * sizeof(unsigned));
-    cudaMalloc(reinterpret_cast<void**>(&dev_b), SIZE * sizeof(unsigned));
-    cudaMalloc(reinterpret_cast<void**>(&dev_c), SIZE * sizeof(unsigned));
+    cudaMalloc(&dev_a, SIZE * sizeof(unsigned));
+    cudaMalloc(&dev_b, SIZE * sizeof(unsigned));
+    cudaMalloc(&dev_c, SIZE * sizeof(unsigned));
     std::vector<float> times;
     cudaStream_t streams[STREAM_COUNT];
     for (auto count = 1; count <= STREAM_COUNT; ++count) {
+        system("cls");
+        std::cout << count << ": " << STREAM_COUNT << std::endl;
         for (auto i = 0; i < count; ++i) {
             cudaStreamCreate(&streams[i]);
         }
@@ -56,7 +57,7 @@ void task2()
             cudaMemcpyAsync(host_c.data() + begin, dev_c + begin, bytes, cudaMemcpyDeviceToHost, streams[i]);
             cudaDeviceSynchronize();
             cudaEventRecord(stop, streams[i]);
-        //cudaEventSynchronize(stop);
+            cudaEventSynchronize(stop);
         }
         //cudaEventRecord(stop);
         //cudaEventSynchronize(stop);

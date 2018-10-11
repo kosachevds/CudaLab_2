@@ -4,7 +4,7 @@ from matplotlib import pyplot as pp
 
 def main():
     current_dir = os.path.dirname(__file__)
-    filename = os.path.join(current_dir, "times.txt")
+    filename = os.path.join(current_dir, "times2.txt")
     with open(filename, "rt") as times_file:
         text = times_file.read()
     parts = text.split(";")
