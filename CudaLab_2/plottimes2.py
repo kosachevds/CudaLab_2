@@ -7,10 +7,10 @@ def main():
     filename = os.path.join(current_dir, "times2.txt")
     with open(filename, "rt") as times_file:
         text = times_file.read()
-    parts = text.split(";")
-    for p in parts:
-        pp.plot([float(x) for x in p.split()])
+    values = [float(x) for x in text.split()]
+    pp.plot(range(1, len(values) + 1), values)
     pp.ylabel("times, ms")
+    pp.xlabel("streams")
     pp.show()
 
 if __name__ == '__main__':

@@ -1,32 +1,21 @@
-#include "common.cuh"
+#include "common.h"
 #include <iostream>
 #include <ctime>
-
-extern void task1();
-extern void task2();
-extern void task3();
 
 int main()
 {
     srand(time(nullptr));
-    //task1();
-    //task2();
-    task3();
+    //Task1();
+    //Task2();
+    Task3();
 }
 
-bool goodMiltiplication(unsigned* a, unsigned* b, unsigned* result, size_t size)
+bool GoodMiltiplication(std::vector<unsigned> const& a, std::vector<unsigned> const& b, std::vector<unsigned> const& result)
 {
-    for (auto i = 0u; i < size; ++i) {
+    for (auto i = 0u; i < a.size(); ++i) {
         if (a[i] * b[i] != result[i]) {
             return false;
         }
     }
     return true;
-}
-
-void writeVector(std::vector<float> const& values, std::ostream& out)
-{
-    for (auto const& item: values) {
-        out << item << std::endl;
-    }
 }

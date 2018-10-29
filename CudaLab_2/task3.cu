@@ -1,75 +1,38 @@
-#include "common.cuh"
+#include "common.h"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <iostream>
 #include <fstream>
 #include <chrono>
 
-const auto BLOCK_GLOBAL = 32u; // sqrt(MAX_BLOCK_SIZE);
-const auto BLOCK_SHARED = 16u;
+static const auto BLOCK_GLOBAL = 32u; // sqrt(MAX_BLOCK_SIZE);
+static const auto BLOCK_SHARED = 16u;
 
-float multiplyOnCpu(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
-float multiplyGpuGlobal(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
-float multiplyGpuShared(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
-void copyMatrixToGpu(unsigned const* const* matrix, size_t size, unsigned* out_array);
-void copyMatrixFromGpu(unsigned const* gpu_array, size_t one_dim_size, unsigned*const* matrix);
-unsigned** createMatrix(size_t size);
-unsigned** createRandomMatrix(size_t size);
-void deleteMatrix(unsigned** matrix, size_t size);
-void printMatrix(unsigned const* const* matrix, size_t size);
-bool equalsMatrices(unsigned const* const* m1, unsigned const* const* m2, size_t size);
+static float multiplyOnCpu(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
+static float multiplyGpuGlobal(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
+static float multiplyGpuShared(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size);
+static void copyMatrixToGpu(unsigned const* const* matrix, size_t size, unsigned* out_array);
+static void copyMatrixFromGpu(unsigned const* gpu_array, size_t one_dim_size, unsigned*const* matrix);
+static unsigned** createMatrix(size_t size);
+static unsigned** createRandomMatrix(size_t size);
+static void deleteMatrix(unsigned** matrix, size_t size);
+static void printMatrix(unsigned const* const* matrix, size_t size);
+static bool equalsMatrices(unsigned const* const* m1, unsigned const* const* m2, size_t size);
 
-__global__ void multiplyGlobal(unsigned const* left, unsigned const* right, unsigned* result, size_t size)
-{
-    auto row = blockIdx.y * blockDim.y + threadIdx.y;
-    auto col = blockIdx.x * blockDim.x + threadIdx.x;
-    if (row < size && col < size) {
-        auto sum = 0u;
-        for (int k = 0; k < size; k++) {
-            sum += left[row * size + k] * right[k * size + col];
-        }
-        result[row * size + col] = sum;
-    }
-}
+static __global__ void multiplyGlobal(unsigned const* left, unsigned const* right, unsigned* result, size_t size);
 
+static __global__ void multiplyShared(unsigned const* left, unsigned const* right, unsigned* result, int size);
 
-__global__ void multiplyShared(unsigned const* left, unsigned const* right, unsigned* result, int size)
-{
-    __shared__ unsigned as [BLOCK_SHARED][BLOCK_SHARED];
-    __shared__ unsigned bs [BLOCK_SHARED][BLOCK_SHARED];
-    int tx = threadIdx.x, ty = threadIdx.y;
-    auto row = blockIdx.y * BLOCK_SHARED + ty;
-    auto col = blockIdx.x * BLOCK_SHARED + tx;
-    auto sum = 0u;
-    for (int m = 0; m < (size - 1) / BLOCK_SHARED + 1; ++m) {
-        if (row < size && m * BLOCK_SHARED + tx < size) {
-            as[ty][tx] = left[row * size + m * BLOCK_SHARED + tx];
-        } else {
-            as[ty][tx] = 0;
-        }
-        if (col < size && m * BLOCK_SHARED + ty < size) {
-            bs[ty][tx] = right[(m * BLOCK_SHARED + ty) * size + col];
-        } else {
-            bs[ty][tx] = 0;
-        }
-        __syncthreads();
-        for (int k = 0; k < BLOCK_SHARED; ++k) {
-            sum += as[ty][k] * bs[k][tx];
-        }
-        __syncthreads();
-    }
-    if (row < size && col < size) {
-        result[row * size + col] = sum;
-    }
-}
-
-void task3()
+void Task3()
 {
     const auto MIN_SIZE = 8;
     const auto STEP = MIN_SIZE;
     const auto MAX_SIZE = 32 * MIN_SIZE;
+
+    std::vector<size_t> sizes;
     std::vector<float> times_cpu, times_gpu_g, times_gpu_s;
-    for (auto size = MIN_SIZE; size <= MAX_SIZE ; size += STEP) {
+    for (auto size = MIN_SIZE; size <= MAX_SIZE; size += STEP) {
+        sizes.push_back(size);
         system("cls");
         std::cout << size << ": " << MAX_SIZE << std::endl;
         auto left = createRandomMatrix(size);
@@ -94,11 +57,13 @@ void task3()
         deleteMatrix(result_gpu, size);
     }
     std::ofstream out("times3.txt");
-    writeVector(times_cpu, out);
+    WriteVector(sizes, out);
     out << ";\n";
-    writeVector(times_gpu_g, out);
+    WriteVector(times_cpu, out);
     out << ";\n";
-    writeVector(times_gpu_s, out);
+    WriteVector(times_gpu_g, out);
+    out << ";\n";
+    WriteVector(times_gpu_s, out);
 }
 
 float multiplyOnCpu(unsigned const* const* left, unsigned const* const* right, unsigned* const* result, size_t size)
@@ -253,4 +218,47 @@ bool equalsMatrices(unsigned const* const* m1, unsigned const* const* m2, size_t
         }
     }
     return true;
+}
+
+__global__ void multiplyGlobal(unsigned const* left, unsigned const* right, unsigned* result, size_t size)
+{
+    auto row = blockIdx.y * blockDim.y + threadIdx.y;
+    auto col = blockIdx.x * blockDim.x + threadIdx.x;
+    if (row < size && col < size) {
+        auto sum = 0u;
+        for (int k = 0; k < size; k++) {
+            sum += left[row * size + k] * right[k * size + col];
+        }
+        result[row * size + col] = sum;
+    }
+}
+
+__global__ void multiplyShared(unsigned const* left, unsigned const* right, unsigned* result, int size)
+{
+    __shared__ unsigned as [BLOCK_SHARED][BLOCK_SHARED];
+    __shared__ unsigned bs [BLOCK_SHARED][BLOCK_SHARED];
+    int tx = threadIdx.x, ty = threadIdx.y;
+    auto row = blockIdx.y * BLOCK_SHARED + ty;
+    auto col = blockIdx.x * BLOCK_SHARED + tx;
+    auto sum = 0u;
+    for (int m = 0; m < (size - 1) / BLOCK_SHARED + 1; ++m) {
+        if (row < size && m * BLOCK_SHARED + tx < size) {
+            as[ty][tx] = left[row * size + m * BLOCK_SHARED + tx];
+        } else {
+            as[ty][tx] = 0;
+        }
+        if (col < size && m * BLOCK_SHARED + ty < size) {
+            bs[ty][tx] = right[(m * BLOCK_SHARED + ty) * size + col];
+        } else {
+            bs[ty][tx] = 0;
+        }
+        __syncthreads();
+        for (int k = 0; k < BLOCK_SHARED; ++k) {
+            sum += as[ty][k] * bs[k][tx];
+        }
+        __syncthreads();
+    }
+    if (row < size && col < size) {
+        result[row * size + col] = sum;
+    }
 }

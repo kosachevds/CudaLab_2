@@ -1,4 +1,4 @@
-#include "common.cuh"
+#include "common.h"
 #include <cuda_runtime.h>
 #include <device_launch_parameters.h>
 #include <fstream>
@@ -13,14 +13,13 @@ __global__ void task2Kernel(unsigned const* a, unsigned const* b, unsigned* resu
     result[index] = a[index] * b[index];
 }
 
-void task2()
+void Task2()
 {
     const auto SIZE = 8 * 1024 * 1024;
     const auto STREAM_COUNT = 8;
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
     cudaEventCreate(&stop);
-    // TODO: matrix[3][SIZE];
     std::vector<unsigned> host_a(SIZE), host_b(SIZE), host_c(SIZE);
     unsigned *dev_a, *dev_b, *dev_c;
     cudaMalloc(&dev_a, SIZE * sizeof(unsigned));
@@ -39,7 +38,6 @@ void task2()
             host_b[i] = rand() % 1024 + 1;
         }
         auto chunk_size = SIZE / count;
-        //cudaEventRecord(start);
         for (auto i = 0; i < count; ++i) {
             auto begin = i * chunk_size;
             int size;
@@ -59,8 +57,6 @@ void task2()
             cudaEventRecord(stop, streams[i]);
             cudaEventSynchronize(stop);
         }
-        //cudaEventRecord(stop);
-        //cudaEventSynchronize(stop);
         for (auto i = 0; i < count; ++i) {
             cudaStreamDestroy(streams[i]);
         }
@@ -74,6 +70,6 @@ void task2()
     cudaEventDestroy(start);
     cudaEventDestroy(stop);
     std::ofstream out("times2.txt");
-    writeVector(times, out);
+    WriteVector(times, out);
     out.close();
 }
