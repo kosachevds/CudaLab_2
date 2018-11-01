@@ -18,9 +18,7 @@ static unsigned** createRandomMatrix(size_t size);
 static void deleteMatrix(unsigned** matrix, size_t size);
 static void printMatrix(unsigned const* const* matrix, size_t size);
 static bool equalsMatrices(unsigned const* const* m1, unsigned const* const* m2, size_t size);
-
 static __global__ void multiplyGlobal(unsigned const* left, unsigned const* right, unsigned* result, size_t size);
-
 static __global__ void multiplyShared(unsigned const* left, unsigned const* right, unsigned* result, int size);
 
 void Task3()

@@ -30,8 +30,8 @@ __global__ void task1_NoCoalescing(unsigned const* a, unsigned const* b, unsigne
 void Task1()
 {
     const auto COUNT = 50u;
-    //const auto SIZE = 10 * 1024u;
-    const auto SIZE = 100 * 1024u;
+    const auto SIZE = 10 * 1024u;
+    //const auto SIZE = 100 * 1024u;
 
     cudaEvent_t start, stop;
     cudaEventCreate(&start);
